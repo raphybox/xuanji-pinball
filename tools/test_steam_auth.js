@@ -336,11 +336,11 @@ function makeCallback(loginRes, claimed, overrides) {
     ok('前端样式存在', /\.steam-login-btn/.test(css));
     const routerSrc = fs.readFileSync(path.join(API, 'steam-auth-router.mjs'), 'utf8');
     ok('顶栏以 Steam 昵称为主标识', /steam-nick', nick/.test(front) && /font-weight: 600/.test(css));
-    ok('昵称渲染排在 ID 之前',
-      front.indexOf("el('span', 'steam-nick', nick)") > 0 &&
-      front.indexOf("el('span', 'steam-nick', nick)") < front.indexOf("el('span', 'steam-id', sid)"));
-    ok('SteamID 保留为副信息且可复制', /el\('span', 'steam-id', sid\)/.test(front) && /navigator\.clipboard/.test(front));
-    ok('无昵称时仍有 ID 兜底、不冒充身份', /if \(!sid && !nick\)/.test(front) && /me\.steamId/.test(front));
+    ok('有昵称时不再渲染可见 ID', /if \(nick\) \{[\s\S]{0,260}\} else if \(sid\)/.test(front));
+    ok('SteamID64 只进悬停提示', /nickEl\.title = nick \+ \(sid \? ' · SteamID64：' \+ sid/.test(front) && /box\.title = nick/.test(front));
+    ok('无昵称时仍有 ID 兜底且可复制', /else if \(sid\)/.test(front) && /navigator\.clipboard/.test(front));
+    ok('占位文案仅作最后兜底', /'Steam 玩家'/.test(front) && /\} else \{/.test(front));
+    ok('徽标收窄、ID 兜底可截断', /max-width: 190px/.test(css) && /max-width: 118px/.test(css));
     ok('服务端无 Key 回退社区档案', /communityProfileUrl\(steamId\)/.test(routerSrc) && /parseCommunityXml\(text, steamId\)/.test(routerSrc));
     ok('有 Key 时仍优先官方 Web API', /if \(cfg\.apiKey\)/.test(routerSrc) && /playerSummariesUrl\(cfg\.apiKey/.test(routerSrc));
     ok('资料抓取失败不阻断登录', /return \{ nick: '', avatar: '' \};/.test(routerSrc));

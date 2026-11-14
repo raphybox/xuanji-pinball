@@ -26,6 +26,11 @@
     'auth_not_configured': '站点尚未配置登录密钥'
   };
   var started = false;
+  /* 后台界面编辑器通过 ?uiEditor=1 加载游戏页。Steam 登录区是运行时按登录态
+     生成的，两种状态天然不可能同时存在，因此编辑态改铺一套静态样例。 */
+  var UI_EDITOR = (function () {
+    try { return /[?&]uiEditor=1/.test(window.location.search); } catch (e) { return false; }
+  })();
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -74,18 +79,17 @@
         img.referrerPolicy = 'no-referrer';
         box.appendChild(img);
       }
-      /* 昵称是主标识、SteamID64 是副信息。
-         服务端有 Web API Key 时走官方 GetPlayerSummaries；没 Key 时回退到
-         Steam 社区公开 XML 档案抓昵称（不需要 $5 门槛）。两端都拿不到才只留 ID，
-         再用「Steam 玩家」占位，但绝不把占位文案当成登录结果。 */
+      /* 顶栏只展示「头像 + 昵称」，SteamID64 不占可见区域，仅放进悬停提示。
+         服务端有 Web API Key 走官方 GetPlayerSummaries；没 Key 回退到 Steam
+         社区公开 XML 档案抓昵称（不需要 $5 门槛）。只有两端都拿不到昵称时，
+         才把 SteamID64 显示出来兜底 —— 不再退回「Steam 玩家」占位文案。 */
       var sid = String((me && me.steamId) || '').trim();
       var nick = String((me && me.nick) || '').trim();
       if (nick) {
         var nickEl = el('span', 'steam-nick', nick);
         nickEl.title = nick + (sid ? ' · SteamID64：' + sid : '');
         box.appendChild(nickEl);
-      }
-      if (sid) {
+      } else if (sid) {
         var idEl = el('span', 'steam-id', sid);
         idEl.title = 'SteamID64：' + sid + ' · 点击复制';
         idEl.addEventListener('click', function () {
@@ -98,8 +102,9 @@
           } catch (e) {}
         });
         box.appendChild(idEl);
+      } else {
+        box.appendChild(el('span', 'steam-nick', 'Steam 玩家'));
       }
-      if (!sid && !nick) box.appendChild(el('span', 'steam-nick', 'Steam 玩家'));
       box.title = nick
         ? (nick + (sid ? ' · SteamID64：' + sid : ''))
         : (sid ? 'SteamID64：' + sid : 'Steam 账号已登录');
@@ -139,11 +144,34 @@
       .catch(function () { render(slotRef, { logged: false }, failReason()); });
   }
 
+  /* 编辑态样例：把「未登录按钮 / 已登录徽标 / 头像 / 昵称 / ID 兜底 / 退出 /
+     失败提示」全部摆出来，保证 SCREENS 里每个 Steam 图层都有可点选的元素。
+     data-ui-sample 只是标记，游戏态不会出现；样例不请求 /me、不写本地昵称。 */
+  function renderEditorSamples(slot) {
+    slot.innerHTML =
+      '<button class="ghost-btn steam-login-btn" type="button" data-ui-sample="1">Steam 登录</button>' +
+      '<span class="steam-user" data-ui-sample="1">' +
+        '<span class="steam-avatar" data-ui-sample="1"></span>' +
+        '<span class="steam-nick" data-ui-sample="1">Raphybox</span>' +
+        '<span class="steam-id" data-ui-sample="1">76561198000000000</span>' +
+      '</span>' +
+      '<button class="ghost-btn steam-logout-btn" type="button" data-ui-sample="1">退出</button>' +
+      '<span class="steam-auth-err" data-ui-sample="1">登录失败提示示例</span>';
+    // 样例晚于 ui-layout.js 的首次 applyAll，补完后主动重新套一次后台下发的覆盖
+    try {
+      if (window.WowPinballUI && window.WowPinballUI.apply) {
+        window.WowPinballUI.apply();
+        setTimeout(function () { window.WowPinballUI.apply(); }, 0);
+      }
+    } catch (e) {}
+  }
+
   function init() {
     if (started) return;
     slotRef = document.getElementById(SLOT_ID);
     if (!slotRef) return;
     started = true;
+    if (UI_EDITOR) { renderEditorSamples(slotRef); return; }
     load();
     // 从 Steam 回跳后地址栏会带 ?steam=ok，清掉避免刷新时重复提示
     try {

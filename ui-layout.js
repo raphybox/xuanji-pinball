@@ -181,6 +181,24 @@
       ['canvas', '孵化动画画布', '#hatchCanvas'],
       ['result', '孵化结果', '#hatchResult'],
       ['confirmBtn', '收下按钮', '#hatchConfirmBtn']
+    ] },
+    /* Steam 登录：顶栏的动态区域，元素是 steam-login.js 运行时生成的。
+       编辑态（?uiEditor=1）由该脚本铺一套静态样例，让「未登录按钮」和
+       「已登录徽标」两种状态都能被单独选中、拖拽、换素材与调排版。
+       顶栏不属于任何 .screen，所以本屏借用首页做背景；applyAll 会遍历全部
+       SCREENS，因此这里的覆盖在所有界面上都生效。 */
+    { id: 'steam', name: '顶栏 · Steam 登录', kind: 'screen', root: '#startScreen', items: [
+      ['bg', '整页背景', 'body', 1], ['app', '内容容器', '.app', 1],
+      ['topbar', '顶部栏', '.topbar'],
+      ['topActions', '右上按钮组', '.top-actions'],
+      ['slot', 'Steam 登录整块（容器）', '#steamAuthSlot', 0, 0, 'Steam 登录 · 单独编辑'],
+      ['loginBtn', 'Steam 登录按钮（未登录）', '.steam-login-btn', 0, 0, 'Steam 登录 · 单独编辑'],
+      ['userBadge', '已登录徽标', '.steam-user', 0, 0, 'Steam 登录 · 单独编辑'],
+      ['avatar', 'Steam 头像', '.steam-avatar', 0, 0, 'Steam 登录 · 单独编辑'],
+      ['nick', 'Steam 昵称文字', '.steam-nick', 0, 0, '文字 · 单独编辑'],
+      ['idFallback', 'SteamID 兜底文字', '.steam-id', 0, 0, '文字 · 单独编辑'],
+      ['logoutBtn', '退出按钮', '.steam-logout-btn', 0, 0, 'Steam 登录 · 单独编辑'],
+      ['errText', '登录失败提示', '.steam-auth-err', 0, 0, '文字 · 单独编辑']
     ] }
   ];
 

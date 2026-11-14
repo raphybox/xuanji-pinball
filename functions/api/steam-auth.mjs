@@ -17,6 +17,10 @@ export const STEAM_LOGIN_URL = 'https://steamcommunity.com/openid/login';
 export const OPENID_NS = 'http://specs.openid.net/auth/2.0';
 export const IDENTIFIER_SELECT = 'http://specs.openid.net/auth/2.0/identifier_select';
 export const STEAM_API_SUMMARIES = 'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/';
+/* Steam 社区公开档案（XML）：不需要 Web API Key，也就绕开了「开发者账号消费满 $5」的门槛。
+   这是公开网页端点而非受 SLA 保障的 Web API，因此只作为无 Key 时的兜底，
+   有 Key 仍优先走 GetPlayerSummaries。 */
+export const STEAM_COMMUNITY_XML = 'https://steamcommunity.com/profiles/';
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 会话 30 天
 export const STATE_TTL_MS = 10 * 60 * 1000;                // 登录 state 10 分钟
@@ -240,8 +244,40 @@ export function parsePlayerSummary(json, steamId) {
     const p = Array.isArray(list) && list.find(x => String(x.steamid) === String(steamId));
     if (!p) return { nick: '', avatar: '' };
     return {
-      nick: String(p.personaname || '').slice(0, 32),
-      avatar: /^https:\/\//.test(String(p.avatarfull || p.avatar || '')) ? String(p.avatarfull || p.avatar) : ''
+      nick: cleanNickname(p.personaname),
+      avatar: safeAvatarUrl(p.avatarfull || p.avatar)
+    };
+  } catch (e) { return { nick: '', avatar: '' }; }
+}
+
+/** 无 API Key 时的兜底：解析 Steam 社区公开 XML 档案。 */
+export function communityProfileUrl(steamId) {
+  return STEAM_COMMUNITY_XML + String(steamId) + '/?xml=1';
+}
+function cdata(tag, src) {
+  const m = new RegExp('<' + tag + '>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</' + tag + '>').exec(src)
+    || new RegExp('<' + tag + '>\\s*([^<]*?)\\s*</' + tag + '>').exec(src);
+  return m ? String(m[1]).trim() : '';
+}
+function cleanNickname(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim().slice(0, 32);
+}
+function safeAvatarUrl(v) {
+  const s = String(v == null ? '' : v).trim();
+  return /^https:\/\//.test(s) ? s.slice(0, 256) : '';
+}
+export function parseCommunityXml(text, steamId) {
+  try {
+    const s = String(text || '');
+    // 必须核对返回的 steamID64：防止代理缓存串号或拿到错误中间页
+    const idm = /<steamID64>\s*(\d{17})\s*<\/steamID64>/.exec(s);
+    if (!idm || idm[1] !== String(steamId)) return { nick: '', avatar: '' };
+    return {
+      nick: cleanNickname(cdata('steamID', s)),
+      avatar: safeAvatarUrl(cdata('avatarFull', s))
     };
   } catch (e) { return { nick: '', avatar: '' }; }
 }

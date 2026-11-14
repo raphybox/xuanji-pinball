@@ -26,6 +26,12 @@ function section(t) { console.log('\n' + t); }
 const SECRET = 'test-secret-do-not-ship';
 const SID = '76561198012345678';
 const CLAIMED = 'https://steamcommunity.com/openid/id/' + SID;
+const COMMUNITY_XML_OK = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><profile>
+  <steamID64>${SID}</steamID64>
+  <steamID><![CDATA[Raphybox]]></steamID>
+  <privacyState>friendsonly</privacyState>
+  <avatarFull><![CDATA[https://avatars.fastly.steamstatic.com/abc_full.jpg]]></avatarFull>
+</profile>`;
 let nonceSeq = 0;
 
 function cookieHeaderFrom(res, name) {
@@ -172,6 +178,15 @@ function makeCallback(loginRes, claimed, overrides) {
     ok('昵称头像可解析', p.nick === '测试玩家' && p.avatar === 'https://a.jpg');
     ok('空列表降级', SA.parsePlayerSummary({ response: { players: [] } }, SID).nick === '');
     ok('非 https 头像被丢', SA.parsePlayerSummary({ response: { players: [{ steamid: SID, personaname: 'x', avatarfull: 'javascript:alert(1)' }] } }, SID).avatar === '');
+
+    const xu = SA.communityProfileUrl(SID);
+    ok('社区档案地址无需 Key', xu === 'https://steamcommunity.com/profiles/' + SID + '/?xml=1' && !/key=/i.test(xu));
+    const xp = SA.parseCommunityXml(COMMUNITY_XML_OK, SID);
+    ok('免 Key 解析出昵称与头像', xp.nick === 'Raphybox' && xp.avatar.indexOf('https://avatars.') === 0);
+    ok('steamID64 不匹配时拒绝（防缓存串号）', SA.parseCommunityXml(COMMUNITY_XML_OK, '76561198999999999').nick === '');
+    ok('缺 CDATA 也能解析纯文本昵称', SA.parseCommunityXml('<profile><steamID64>' + SID + '</steamID64><steamID>PlainName</steamID></profile>', SID).nick === 'PlainName');
+    ok('非 XML / 空响应返回空', SA.parseCommunityXml('is_valid:true\n', SID).nick === '' && SA.parseCommunityXml('', SID).nick === '');
+    ok('控制字符被清理', SA.parseCommunityXml('<profile><steamID64>' + SID + '</steamID64><steamID><![CDATA[A\u0001B   C]]></steamID></profile>', SID).nick === 'A B C');
   }
 
   section('8) 账号存储：uid 与 SteamID 解耦 + 换登录方式余地');
@@ -203,7 +218,12 @@ function makeCallback(loginRes, claimed, overrides) {
     const calls = [];
     const router = createAuthRouter({
       secret: SECRET, apiKey: '', store: store, devMock: false,
-      fetchImpl: async (url, init) => { calls.push({ url: url, init: init }); return new Response(verifyText); }
+      fetchImpl: async (url, init) => {
+        calls.push({ url: url, init: init });
+        if (url === SA.STEAM_LOGIN_URL) return new Response(verifyText);
+        if (String(url).indexOf(SA.STEAM_COMMUNITY_XML) === 0) return new Response(COMMUNITY_XML_OK);
+        return new Response('{}');
+      }
     });
     const mkReq = (url, cookie) => new Request(url, { headers: cookie ? { Cookie: cookie } : {} });
 
@@ -219,8 +239,9 @@ function makeCallback(loginRes, claimed, overrides) {
     const cb = makeCallback(login);
     const callback = await router.handle(mkReq(cb.url, stateCookie));
     ok('callback 302 回首页', callback.status === 302 && new URL(callback.headers.get('Location')).pathname === '/');
-    ok('真的向 Steam 回传了断言', calls.length === 1 && calls[0].init.method === 'POST' && calls[0].url === SA.STEAM_LOGIN_URL);
+    ok('真的向 Steam 回传了断言', calls.some(c => c.init.method === 'POST' && c.url === SA.STEAM_LOGIN_URL));
     ok('回传 body 是 check_authentication', new URLSearchParams(calls[0].init.body).get('openid.mode') === 'check_authentication');
+    ok('无 API Key 时回退到 Steam 社区公开档案', calls.some(c => c.url === SA.communityProfileUrl(SID)));
     const sessionCookie = cookieHeaderFrom(callback, SA.SESSION_COOKIE);
     ok('下发 session cookie', /^wowp_session=/.test(sessionCookie));
     ok('同时清除 state cookie', /Max-Age=0/.test(cookieFullFrom(callback, SA.STATE_COOKIE)));
@@ -230,6 +251,8 @@ function makeCallback(loginRes, claimed, overrides) {
     ok('me 返回 logged:true 与 uid', j1.logged === true && /^u_/.test(j1.uid));
     ok('me 返回 SteamID 仅用于展示', j1.steamId === SID && j1.provider === 'steam');
     ok('业务主键不等于 SteamID', j1.uid !== SID);
+    ok('免 Key 也能拿到并保存 Steam 昵称', j1.nick === 'Raphybox');
+    ok('头像同步落到账号', String(j1.avatar).indexOf('https://avatars.') === 0);
 
     const g = await router.guard(mkReq('https://xjdz.de5.net/api/room/create', sessionCookie), 'roomCreate');
     ok('guard 能识别登录态 uid', g.ok && g.identity.uid === j1.uid);
@@ -311,10 +334,16 @@ function makeCallback(loginRes, claimed, overrides) {
     ok('页面挂载 Steam 登录位与脚本', /id="steamAuthSlot"/.test(html) && /steam-login\.js/.test(html));
     ok('game.js 监听 profile 更新', /wowpinball:profile-update/.test(game));
     ok('前端样式存在', /\.steam-login-btn/.test(css));
-    ok('顶栏以 SteamID64 为主标识', /el\('span', 'steam-id', sid\)/.test(front) && /\.steam-id \{/.test(css));
-    ok('无昵称时不再拿占位文案冒充身份', /if \(!sid && !nick\)/.test(front) && /me\.steamId/.test(front));
-    ok('SteamID 支持点击复制', /navigator\.clipboard/.test(front));
-    ok('昵称降级为副信息', /steam-nick', nick/.test(front) && /max-width: 92px/.test(css));
+    const routerSrc = fs.readFileSync(path.join(API, 'steam-auth-router.mjs'), 'utf8');
+    ok('顶栏以 Steam 昵称为主标识', /steam-nick', nick/.test(front) && /font-weight: 600/.test(css));
+    ok('昵称渲染排在 ID 之前',
+      front.indexOf("el('span', 'steam-nick', nick)") > 0 &&
+      front.indexOf("el('span', 'steam-nick', nick)") < front.indexOf("el('span', 'steam-id', sid)"));
+    ok('SteamID 保留为副信息且可复制', /el\('span', 'steam-id', sid\)/.test(front) && /navigator\.clipboard/.test(front));
+    ok('无昵称时仍有 ID 兜底、不冒充身份', /if \(!sid && !nick\)/.test(front) && /me\.steamId/.test(front));
+    ok('服务端无 Key 回退社区档案', /communityProfileUrl\(steamId\)/.test(routerSrc) && /parseCommunityXml\(text, steamId\)/.test(routerSrc));
+    ok('有 Key 时仍优先官方 Web API', /if \(cfg\.apiKey\)/.test(routerSrc) && /playerSummariesUrl\(cfg\.apiKey/.test(routerSrc));
+    ok('资料抓取失败不阻断登录', /return \{ nick: '', avatar: '' \};/.test(routerSrc));
     ok('前端只用 uid 不拿 SteamID 做业务', /window\.SteamAuthState = me/.test(front) && !/uid\s*=\s*me\.steamId/.test(front));
   }
 

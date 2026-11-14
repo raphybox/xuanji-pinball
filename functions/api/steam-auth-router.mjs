@@ -113,20 +113,44 @@ export function createAuthRouter(deps) {
   }
 
   async function fetchSteamProfile(steamId) {
-    if (!cfg.apiKey) return { nick: '', avatar: '' };
+    /* 1) 有 Web API Key：官方 GetPlayerSummaries，最稳（受 SLA 保障）。
+          需要开发账号在 Steam 商店消费满 $5 才能领 Key。 */
+    if (cfg.apiKey) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        let j = null;
+        try {
+          const r = await cfg.fetchImpl(SA.playerSummariesUrl(cfg.apiKey, steamId), { signal: ctrl.signal });
+          if (r.ok) j = await r.json();
+        } finally { clearTimeout(t); }
+        const p = SA.parsePlayerSummary(j, steamId);
+        if (p.nick) { cfg.log('steam_profile_source', 'webapi'); return p; }
+      } catch (e) { cfg.log('steam_webapi_failed', String((e && e.message) || e)); }
+    }
+    /* 2) 没 Key（或官方没给昵称）：Steam 社区公开 XML 档案。
+          不需要 API Key / 不需要 $5 门槛；这是公开网页端点，可能受 Steam 侧
+          限流、隐私设置或 CDN 拦截影响，因此失败必须静默降级，绝不阻断登录。 */
     try {
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 3000);
-      let j = null;
+      const t = setTimeout(() => ctrl.abort(), 3500);
+      let text = '';
       try {
-        const r = await cfg.fetchImpl(SA.playerSummariesUrl(cfg.apiKey, steamId), { signal: ctrl.signal });
-        j = await r.json();
+        const r = await cfg.fetchImpl(SA.communityProfileUrl(steamId), {
+          signal: ctrl.signal,
+          headers: {
+            'User-Agent': 'XuanJiPinball-Auth/1.0 (+https://xjdz.de5.net)',
+            'Accept': 'application/xml, text/xml, */*'
+          }
+        });
+        if (r.ok) text = await r.text();
       } finally { clearTimeout(t); }
-      return SA.parsePlayerSummary(j, steamId);
-    } catch (e) {
-      cfg.log('steam_profile_failed', String((e && e.message) || e));
-      return { nick: '', avatar: '' };   // 没 Key / 受限账号 / 超时都只影响昵称头像，不影响登录
-    }
+      const p = SA.parseCommunityXml(text, steamId);
+      if (p.nick) { cfg.log('steam_profile_source', 'community_xml'); return p; }
+      cfg.log('steam_community_empty', steamId);
+    } catch (e) { cfg.log('steam_community_failed', String((e && e.message) || e)); }
+    /* 资料拿不到只影响昵称 / 头像，登录本身照常完成，前端仍有 SteamID64 兜底 */
+    return { nick: '', avatar: '' };
   }
 
   /** 返回 Response 表示本路由接管；返回 null 表示不是鉴权路径。 */

@@ -959,19 +959,19 @@ body.preview-mode .arena-wrap { height: clamp(360px, 60vh, 720px); }
 .steam-auth-slot { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .steam-login-btn { color: #a9c6ef; border-color: #3a5a86; background: #14202f; }
 .steam-login-btn:hover:not(:disabled) { color: #cfe2ff; border-color: #5b86bd; background: #1a2b40; }
-.steam-user { display: inline-flex; align-items: center; gap: 6px; max-width: 280px; min-width: 0;
+.steam-user { display: inline-flex; align-items: center; gap: 6px; max-width: 320px; min-width: 0;
   padding: 3px 9px 3px 4px; border: 1px solid var(--line); border-radius: 8px; background: #111a26; }
 .steam-avatar { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: none; }
-.steam-id { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; letter-spacing: .2px;
-  color: #cfe2ff; white-space: nowrap; cursor: pointer; user-select: all; flex: none; }
-.steam-id:hover { color: #fff; text-decoration: underline dotted; }
-.steam-nick { font-size: 10.5px; color: var(--text-dim); max-width: 92px;
+.steam-nick { font-size: 11.5px; font-weight: 600; color: var(--text); max-width: 130px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steam-id { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; letter-spacing: .2px;
+  color: var(--text-faint); white-space: nowrap; cursor: pointer; user-select: all; flex: none; }
+.steam-id:hover { color: var(--accent-2); text-decoration: underline dotted; }
 .steam-logout-btn { padding: 6px 10px; }
 .steam-auth-err { font-size: 11px; line-height: 1.35; color: var(--bad); max-width: 230px; }
 @media (max-width: 860px) {
   .steam-auth-err { display: none; }
-  .steam-nick { max-width: 78px; }
-  .steam-id { font-size: 10px; }
-  .steam-user { max-width: 200px; }
+  .steam-nick { max-width: 84px; }
+  .steam-id { display: none; }   /* 窄屏只留昵称，完整 ID 仍在 hover 提示里 */
+  .steam-user { max-width: 150px; }
 }

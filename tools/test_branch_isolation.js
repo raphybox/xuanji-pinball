@@ -5,7 +5,7 @@
 
    本测试复刻 game.js applyExtraModules 与 admin.js burstGroup 的「逐节点生成持续掉血区」
    口径（即本次修复后的逻辑），作为该行为的守护。 */
-const SM = require('E:/AI临时文件夹/.workbuddy/魔兽弹珠/skill-modules.js');
+const SM = require('../skill-modules.js');
 
 let pass = 0, fail = 0;
 function ok(name, cond) {

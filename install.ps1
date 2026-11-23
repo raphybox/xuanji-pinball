@@ -47,9 +47,9 @@ if (-not $root) {
   Bad '没有找到项目根目录（需要同时存在 admin.html / admin.js / admin.css）。'
   Say ''
   Say '  请把本文件夹里的【全部内容】复制到项目根目录，例如：'
-  Say '    E:\AI临时文件夹\.workbuddy\魔兽弹珠\admin.html'
-  Say '    E:\AI临时文件夹\.workbuddy\魔兽弹珠\安装.bat'
-  Say '    E:\AI临时文件夹\.workbuddy\魔兽弹珠\y3\ ...'
+  Say '    <项目根>\admin.html'
+  Say '    <项目根>\安装.bat'
+  Say '    <项目根>\y3\ ...'
   Say '  然后重新双击 安装.bat。'
   Say '  （也可以把项目根路径作为参数传进来：install.ps1 "D:\你的项目"）'
   exit 1

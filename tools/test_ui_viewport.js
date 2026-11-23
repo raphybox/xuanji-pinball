@@ -25,17 +25,28 @@ const css = read('styles.css');
 console.log('\n1) 预览 iframe 视口跟随浏览器窗口');
 ok('不再有写死的 UI_W = 1280 基准', !/const\s+UI_W\s*=\s*1280/.test(admin));
 ok('UI_H 仍保留为预览设计高度', /const UI_H = 860;/.test(admin));
-ok('uiViewportW 取 window.innerWidth', /function uiViewportW\(\)[\s\S]{0,160}window\.innerWidth/.test(admin));
+ok('uiViewportW 取 window.innerWidth', /function uiViewportW\(\)[\s\S]{0,320}window\.innerWidth/.test(admin));
 ok('异常窄窗口有兜底值', /w > 320 \? w : 1280/.test(admin));
+ok('可锁定基准宽（消除两窗口 .app 居中差）',
+  /function uiViewportW\(\)[\s\S]{0,180}S\.ui\.baseW/.test(admin) &&
+  /if \(locked > 320\) return locked;/.test(admin));
+ok('锁定宽有输入控件与事件', /id="uiBaseW"[^>]*data-change="ui-base-w"/.test(admin) && /case 'ui-base-w'/.test(admin));
+ok('默认 1:1 实际大小预览', /scale: 1, baseW: 0/.test(admin) && /\[1, '100% · 实际大小'\]/.test(admin));
+ok('同宽打开游戏页', /if \(!S\.ui\.baseW \|\| Math\.abs\(base - window\.innerWidth\) <= 2\) window\.open\('index\.html', '_blank'\)/.test(admin));
+ok('视图设置刷新后保留', /UI_VIEW_KEY = 'wow-ui-view'/.test(admin) && /saveUiView\(\)/.test(admin) && /case 'ui-base-w'[\s\S]{0,240}saveUiView\(\)/.test(admin));
 ok('applyUiScale 先算动态视口宽', /function applyUiScale\(\)[\s\S]{0,120}const vpW = uiViewportW\(\)/.test(admin));
 ok('iframe 宽高由 JS 写入（覆盖 CSS 的 1280）',
   /frame\.style\.width = vpW \+ 'px'/.test(admin) && /frame\.style\.height = UI_H \+ 'px'/.test(admin));
-ok('fit 缩放按动态宽度计算', /s = availW \/ vpW;/.test(admin) && !/availW \/ UI_W/.test(admin));
-ok('缩放后的占位尺寸同步用 vpW', /inner\.style\.width = \(vpW \* s\) \+ 'px'/.test(admin));
+ok('fit 缩放按动态宽度计算', /s = availW \/ frameW;/.test(admin) && !/availW \/ UI_W/.test(admin));
+ok('缩放后的占位尺寸同步用实际 iframe 宽', /inner\.style\.width = \(frameW \* s\) \+ 'px'/.test(admin));
+ok('补偿 iframe 滚动条造成的 7.5px 居中差',
+  /frame\.offsetWidth - doc\.documentElement\.clientWidth/.test(admin) && /frameW = vpW \+ sb/.test(admin));
 ok('窗口变化无条件重算（不只是 fit 档）',
   /addEventListener\('resize'[\s\S]{0,180}if \(S\.tab === 'ui'\)[\s\S]{0,120}setTimeout\(applyUiScale, 120\)/.test(admin));
-ok('工具栏显示当前基准宽度', /id="uiVpLabel"/.test(admin) && /lab\.textContent = '基准 ' \+ vpW/.test(admin));
+ok('工具栏显示当前基准宽度', /id="uiVpLabel"/.test(admin) && /lab\.textContent =/.test(admin) && /vpW \+ 'px'/.test(admin));
 ok('基准标签有样式', /\.ui-vp-label \{/.test(adminCss));
+ok('锁定宽输入框有样式', /\.ui-tb-label \.input\.ui-base-w \{/.test(adminCss));
+ok('基准标签显示实际大小/锁定状态', /lab\.textContent = \(S\.ui\.baseW \? '锁定 ' : '基准 '\)/.test(admin) && /实际大小 1:1/.test(admin));
 
 console.log('\n2) 编辑态样例不撑高顶栏');
 ok('dock 改为矮占位且脱离 flex 拉伸',

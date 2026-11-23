@@ -1934,14 +1934,15 @@
     }, 3.5),
     P('陨星火雨', '延迟 1.1 秒落下一片火雨：范围持续伤害 + 击退，读走位用', 'epic', function () {
       var s = node('source', 0, 0, { trigger: 'roundStart', delay: 0.3, aim: 'atEnemy' });
-      var sel = node('select', 0, 0, { side: 'enemyMany', pick: 'nearest', count: 3 });
+      var rg = node('range', 0, 0, { bindTo: 'auto', side: 'enemyMany', count: 3, shape: 'circle', radius: 130, origin: 'caster', maxTargets: 3, pick: 'lowestHp', includeSelf: false });
       var dl = node('delay', 0, 0, { seconds: 1.1 });
       var zn = node('zone', 0, 0, { triggerEvent: 'onHit', radius: 130, duration: 3, dps: 8, slowPct: 0.15, color: '#ff8a3a' });
       var d = node('damage', 0, 0, { triggerEvent: 'onTick', base: 0, dotEnable: true, dotDps: 6, dotRadius: 130, dotDuration: 3 });
       var im = node('impact', 0, 0, { triggerEvent: 'onHit', aoeRadius: 130, aoePct: 0.4, shake: 0.3 });
       var f = node('fx', 0, 0, { triggerEvent: 'onHit', effect: 'fire/meteor', attach: 'point', scale: 1.5, loop: false, life: 3 });
-      return makeGraph([s, sel, dl, zn, d, im, f], [
-        E(s, 'cast', sel, 'cast'), E(s, 'cast', dl, 'cast'), E(dl, 'cast', zn, 'cast'),
+      return makeGraph([s, dl, rg, zn, d, im, f], [
+        E(s, 'cast', dl, 'cast'), E(dl, 'cast', rg, 'cast'),
+        E(rg, 'area', zn, 'area'),
         E(zn, 'tick', d, 'tick'), E(zn, 'area', im, 'area'), E(im, 'cast', f, 'cast')
       ]);
     }, 6),

@@ -6,7 +6,7 @@
 //  3) 各节点 _delay 正确继承延迟（=0.8）
 //  4) 模拟路径落点：每个落点生成一片固定判定区（弹珠走过处都留伤害）
 //  5) 对照：非路径特效下游的伤害节点不被路由（保持独立跟随红圈）
-const SM = require('E:/AI临时文件夹/.workbuddy/魔兽弹珠/skill-modules.js');
+const SM = require('../skill-modules.js');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

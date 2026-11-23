@@ -603,6 +603,19 @@
       case 'round_start':
         if (P2P.role === 'guest') p2pGuestRoundStart(msg);
         break;
+      case 'vfx':
+        // 房主权威模拟时，把「技能表现事件」补发给客机；客机不结算伤害，只复播特效/粒子
+        if (P2P.role === 'guest') p2pGuestVfx(msg);
+        break;
+      case 'shot':
+        if (P2P.role === 'guest') p2pGuestShot(msg);
+        break;
+      case 'shot_end':
+        if (P2P.role === 'guest') p2pGuestShotEnd(msg);
+        break;
+      case 'zone':
+        if (P2P.role === 'guest') p2pGuestZone(msg);
+        break;
       case 'round_end':
         if (P2P.role === 'guest') p2pGuestRoundEnd(msg);
         break;
@@ -702,6 +715,14 @@
   function p2pGuestRoundEnd(msg) {
     if (G.phase !== 'fighting') return;
     G.phase = 'rest';
+    // 回合结束：清掉未收尾的幽灵弹 / 幽灵区域，避免下一回合从旧位置继续飞
+    if (G.skillShots && G.skillShots.length) G.skillShots = G.skillShots.filter(q => !q._ghost);
+    if (G.skillZones && G.skillZones.length) {
+      G.skillZones = G.skillZones.filter(z => {
+        if (z && z._ghostZone) { z.dead = true; return false; }
+        return true;
+      });
+    }
     G.round = msg.r;
     const winner = p2pMapWinner(msg.w);
     const pp = P2P.role === 'host' ? msg.pp : msg.ep;   // 我方剩余生命百分比
@@ -844,6 +865,134 @@
       if (drop >= 6) sfx.hit();
     }
     f._p2pHp = hp;
+  }
+
+  /* 客机复播房主发来的技能表现事件：
+     只调用 spawnSkillBurst 走「特效 / 粒子 / 路径表现」分支，不碰伤害、状态、区域结算。
+     ctx 传 null：客机没有房主的命中目标上下文，宁可多播一层，也不要漏掉整段技能表现。 */
+  function p2pGuestVfx(msg) {
+    if (!SKILL_RT || !msg || !msg.sid || G.screen !== 'battle' || G.phase !== 'fighting') return;
+    const sk = SKILLS.find(s => s.id === msg.sid);
+    const C = sk && sk.compiled;
+    if (!C) return;
+    const actor = (G.actors || []).find(a => a && a.seat === msg.seat) || null;
+    spawnSkillBurst(C, Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.rot) || 0,
+      msg.where || 'impact', actor, null, null);
+  }
+
+  /* 房主 → 客机：投射物本体（飞行中的弹体 / 弹道 / 贴图）表现。
+     客机端只做「幽灵弹」：同参数本地飞行、撞墙反弹、按距离/寿命回收，
+     不参与命中与伤害结算；真正销毁由房主的 shot_end 事件通知。 */
+  function p2pSendShotGroup(C, f, h, shots) {
+    if (!P2P.active || P2P.role !== 'host' || !P2P.net || !P2P.net.ready) return;
+    if (!C || !C.sid || !shots || !shots.length) return;
+    const seat = (f && f.seat != null) ? f.seat : 0;
+    P2P.net.sendCtrl({
+      k: 'shot', sid: C.sid, seat: seat, hostId: h ? h.id : '',
+      name: (C.projectile && C.projectile.name) || '',
+      shots: shots.map(q => ({
+        id: q._netId || 0, x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10,
+        vx: Math.round(q.vx * 10) / 10, vy: Math.round(q.vy * 10) / 10,
+        r: q.r, rot: Math.round((q.rot || 0) * 10) / 10,
+        gap: q.gap || 0, params: q.params || null
+      }))
+    });
+  }
+
+  function p2pGuestShot(msg) {
+    if (!SKILL_RT || !msg || !msg.sid || !Array.isArray(msg.shots) || !msg.shots.length) return;
+    if (G.screen !== 'battle') return;
+    const sk = SKILLS.find(s => s.id === msg.sid);
+    const C = sk && sk.compiled;
+    if (!C) return;
+    const actor = (G.actors || []).find(a => a && a.seat === msg.seat) || null;
+    if (!actor) return;
+    let VC = C;
+    try { if (msg.hostId && SKILL_RT.SM && SKILL_RT.SM.viewFor) VC = SKILL_RT.SM.viewFor(C, msg.hostId) || C; } catch (e) { VC = C; }
+    msg.shots.forEach(s => {
+      if (!s || !s.id) return;
+      const pr = s.params || (VC.projectile || {});
+      const q = {
+        side: actor.side, x: Number(s.x) || 0, y: Number(s.y) || 0,
+        vx: Number(s.vx) || 0, vy: Number(s.vy) || 0,
+        r: Number(s.r) || 6, age: 0, traveled: 0, bounces: 0,
+        pierceLeft: pr.pierce || 0, spin: pr.spin || 0, rot: Number(s.rot) || 0,
+        dead: false, hitIds: {}, trail: pr.trail === false ? null : [],
+        fx: [], particles: [], params: pr, gap: Number(s.gap) || 0,
+        _ghost: true, _netId: s.id, _C: VC, _owner: actor,
+        _projName: msg.name || '', _hostId: msg.hostId || ''
+      };
+      if (pr.bindCaster) {
+        q._bindCaster = true; q._followCaster = pr.followCaster !== false;
+        q._casterRef = actor; q._casterPX = actor.x; q._casterPY = actor.y;
+      }
+      G.skillShots.push(q);
+    });
+  }
+
+  function p2pGuestShotEnd(msg) {
+    if (!msg || !msg.ids || !msg.ids.length || !G.skillShots || !G.skillShots.length) return;
+    const ids = msg.ids;
+    // 不立刻抹掉：房主端在贴身命中的同一帧就会发销毁，客机若同步删除会连一帧弹体都看不到。
+    // 打上 120ms 的收尾时间，让幽灵弹至少飞出一小段，再按房主权威销毁。
+    const now = performance.now();
+    G.skillShots.forEach(q => {
+      if (q && q._ghost && ids.indexOf(q._netId) >= 0 && !q._endAt) q._endAt = now + 120;
+    });
+  }
+
+  function p2pSendShotEnd(q) {
+    if (!q || !q._netId) return;
+    if (!P2P.active || P2P.role !== 'host' || !P2P.net || !P2P.net.ready) return;
+    P2P.net.sendCtrl({ k: 'shot_end', ids: [q._netId] });
+  }
+
+  /* 房主 → 客机：区域·残留的实体与专属像素特效。
+     客机只建「幽灵区域」：按生命周期淡出、跟随施法者，不跑 tick、不结算任何伤害。 */
+  function p2pSendZone(rec, zfx) {
+    if (!P2P.active || P2P.role !== 'host' || !P2P.net || !P2P.net.ready || !rec) return;
+    const sid = rec.C && rec.C.sid;
+    if (!sid) return;
+    const seat = (rec.owner && rec.owner.seat != null) ? rec.owner.seat : 0;
+    const cfg = rec.cfg || {};
+    P2P.zoneSeq = (P2P.zoneSeq || 0) + 1;
+    rec._netId = P2P.zoneSeq;
+    P2P.net.sendCtrl({
+      k: 'zone', sid: sid, seat: seat, id: rec._netId,
+      x: Math.round(rec.x), y: Math.round(rec.y),
+      life: rec.life,
+      cfg: { color: cfg.color || '', radius: cfg.radius || 70, followCaster: cfg.followCaster === true },
+      zfx: Array.isArray(zfx) ? zfx : []
+    });
+  }
+
+  function p2pGuestZone(msg) {
+    if (!SKILL_RT || !msg || !msg.sid || !msg.id || G.screen !== 'battle') return;
+    const sk = SKILLS.find(s => s.id === msg.sid);
+    const C = sk && sk.compiled;
+    if (!C) return;
+    const actor = (G.actors || []).find(a => a && a.seat === msg.seat) || null;
+    if (!actor) return;
+    if (!G.skillZones) G.skillZones = [];
+    if (G.skillZones.some(z => z._ghostZone && z._netId === msg.id)) return;   // 重发不叠层
+    const cfg = msg.cfg || {};
+    const rec = {
+      owner: actor, side: actor.side, C: C, _ghostZone: true, _netId: msg.id,
+      x: Number(msg.x) || actor.x, y: Number(msg.y) || actor.y,
+      born: 0, _bornAt: performance.now(), _age: 0,
+      life: Math.max(0.3, Number(msg.life) || 3), tick: 1e9,
+      cfg: { color: cfg.color || '#ff7a30', radius: Number(cfg.radius) || 70, followCaster: cfg.followCaster === true },
+      _skinFx: false
+    };
+    G.skillZones.push(rec);
+    if (Array.isArray(msg.zfx) && msg.zfx.length) {
+      rec._skinFx = true;
+      SKILL_RT.SE.spawnFx(msg.zfx, 'zone', rec.x, rec.y, 0, null, null, null, null, 0).then(arr => {
+        if (!arr.length) { rec._skinFx = false; return; }
+        arr.forEach(a => { a.follow = rec; a.x = rec.x; a.y = rec.y; a.born = performance.now(); });
+        SKILL_RT.SE.pushFx(G.skillFx, arr);
+      });
+    }
   }
 
   /* ---------- 大厅 UI ---------- */
@@ -2501,8 +2650,13 @@
         shots.forEach(q => {
           q._owner = f; q._C = VC; q._projName = projName; q._hostId = h.id;
           if (form === 'summon') { q.summon = true; q.lifetime = (VC.projectile.summonDur || 6); q.homing = Math.max(q.homing || 0, 0.5); }
+          if (P2P.active && P2P.role === 'host' && P2P.net && P2P.net.ready) {
+            P2P.shotSeq = (P2P.shotSeq || 0) + 1;
+            q._netId = P2P.shotSeq;
+          }
           G.skillShots.push(q);
         });
+        p2pSendShotGroup(C, f, h, shots);
         // 跟随投射物的像素特效：只替换「这个载体」的弹体外观
         const projFx = VC.projectileFx || [];
         if (projFx.length) {
@@ -2635,6 +2789,25 @@
     // 粒子已在编译期按 triggerEvent 归入对应事件组（events[ev].particles），
     // attach 仅作视觉锚点，不再按 attach===where 过滤，否则默认 attach='impact' 的粒子在非命中事件中不生效
     normalParts.forEach(p => { if ((p._delay || 0) > 0) scheduleSkill(p._delay, () => applyPartEntry(p)); else applyPartEntry(p); });
+
+    /* 联机房主：把本次「表现事件」补发给客机。
+       客机没有跑技能运行时，原先只能靠血量差补火花，看不到技能本身的像素特效。
+       只发表现层（技能 id / 座位 / 锚点 / 坐标 / 朝向），客机收到后走同一条 spawnSkillBurst，
+       但 ctx=null 且不结算伤害。按「座位+技能+事件点」做 90ms 节流，避免区域 tick 刷屏。 */
+    if (P2P.active && P2P.role === 'host' && P2P.net && P2P.net.ready && C && C.sid &&
+        (fxList.length || pathFx.length || partList.length)) {
+      const seat = (followEnt && followEnt.seat != null) ? followEnt.seat : 0;
+      const key = seat + '|' + C.sid + '|' + where;
+      const now = performance.now();
+      if (!P2P.vfxLast) P2P.vfxLast = {};
+      if (!(P2P.vfxLast[key] > 0) || now - P2P.vfxLast[key] >= 90) {
+        P2P.vfxLast[key] = now;
+        P2P.net.sendCtrl({
+          k: 'vfx', sid: C.sid, seat: seat, where: where,
+          x: Math.round(x), y: Math.round(y), rot: Math.round(rot * 100) / 100
+        });
+      }
+    }
   }
 
   /* 伤害求和：只累计「命中来源 + 伤害对象」都匹配的伤害节点。
@@ -3046,6 +3219,7 @@
     /* 连到「区域·残留」的像素特效挂到区域实体上：位置随实体、到期一起回收。
        编译层已按 fxByHostNode 把特效分流到对应载体，不再误当投射物皮肤。 */
     const zfx = (hostC && hostC.fxByHostNode && hostC.fxByHostNode[z._nodeId]) || [];
+    p2pSendZone(rec, zfx);
     if (!zfx.length) return;
     rec._skinFx = true;
     SKILL_RT.SE.spawnFx(zfx, 'zone', x, y, 0, null, null, null, null, 0).then(arr => {
@@ -3507,6 +3681,7 @@
   }
   function skillShotExpire(q) {
     const caster = q._owner, C = q._C; if (!C) return;
+    p2pSendShotEnd(q);   // 客机幽灵弹按房主权威的销毁时刻回收，避免打中后还在飞
     const grp = C.events.onExpire;
     if (grp && grp.impact && grp.impact.explodeOnExpire) areaBlast(C, caster, grp, q.x, q.y);
     /* target 传对手（此前传的是施法者自己）：否则「消失时 → 标记 / 减速」会落到施法者身上、
@@ -3976,6 +4151,25 @@
     G.floaters.push({ x: x + rand(-8, 8), y: y, vy: -46, life: 0.85, max: 0.85, text: text, color: color, size: size });
   }
   function updateFx(dt) {
+    // 客机幽灵投射物：只推进表现，不结算命中；房主 shot_end 到达后按收尾时间回收
+    if (P2P.active && P2P.role === 'guest' && SKILL_RT && G.screen === 'battle' && G.phase === 'fighting' &&
+        G.skillShots && G.skillShots.length) {
+      SKILL_RT.SE.advance(G.skillShots, Math.min(dt, 0.05), {
+        w: CONFIG.ARENA_W, h: CONFIG.ARENA_H, targets: []
+      });
+      const gnow = performance.now();
+      G.skillShots = G.skillShots.filter(q => !(q && q._ghost && q._endAt && gnow >= q._endAt));
+    }
+    if (P2P.active && P2P.role === 'guest' && G.screen === 'battle' && G.skillZones && G.skillZones.length) {
+      const znow = performance.now();
+      G.skillZones = G.skillZones.filter(z => {
+        if (!z || !z._ghostZone) return true;
+        z._age = (znow - z._bornAt) / 1000;
+        if (z._age > z.life) { z.dead = true; return false; }
+        if (z.cfg && z.cfg.followCaster && z.owner && !z.owner.dead) { z.x = z.owner.x; z.y = z.owner.y; }
+        return true;
+      });
+    }
     G.trauma = Math.max(0, G.trauma - dt * 1.5);
     G.flash = Math.max(0, G.flash - dt * 1.2);
     G.particles.forEach(q => {

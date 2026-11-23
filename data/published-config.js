@@ -4,7 +4,7 @@ window.WOWPINBALL_PUBLISHED = {
   "meta": {
     "schema": 1,
     "gameName": "魔兽弹珠",
-    "updatedAt": "2026-11-15",
+    "updatedAt": "2026-11-23",
     "note": "默认配置，与首版游戏数值一致"
   },
   "config": {
@@ -4336,8 +4336,8 @@ window.WOWPINBALL_PUBLISHED = {
           "z": 10
         },
         "coinBadge": {
-          "dx": 176,
-          "dy": 122,
+          "dx": 288,
+          "dy": 116,
           "w": 162,
           "h": 48
         },
@@ -4346,26 +4346,26 @@ window.WOWPINBALL_PUBLISHED = {
           "dy": -1
         },
         "shopBtn": {
-          "dx": 177,
-          "dy": 120,
+          "dx": 295,
+          "dy": 114,
           "w": 87,
           "h": 51,
           "z": 20
         },
         "nickBtn": {
-          "dx": -43,
-          "dy": 9
+          "dx": 3,
+          "dy": 11
         },
         "speedBtn": {
           "hide": true
         },
         "soundBtn": {
-          "dx": -33,
-          "dy": 9
+          "dx": 16,
+          "dy": 11
         },
         "rulesBtn": {
-          "dx": -30,
-          "dy": 8
+          "dx": 31,
+          "dy": 11
         },
         "head": {
           "dx": -2,
@@ -4813,8 +4813,8 @@ window.WOWPINBALL_PUBLISHED = {
       }
     ]
   },
-  "version": "WJ-MNXG-Y3J5-AAAAA6-BQ9N-NDUB-Z2K4-CP6R-PCVA",
-  "versionSeq": 28,
+  "version": "WJ-MEXG-Y3J5-AAAAA7-BQ9N-NDUB-Z2K4-CP6R-PCVA",
+  "versionSeq": 29,
   "statuses": [
     {
       "kind": "buff",
